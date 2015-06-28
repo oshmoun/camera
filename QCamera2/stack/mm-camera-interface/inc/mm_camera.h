@@ -35,6 +35,7 @@
 #include "mm_camera_interface.h"
 #include <hardware/camera.h>
 #include <utils/Timers.h>
+#include "mm_camera_shim.h"
 
 /**********************************************************************************
 * Data structure declare
@@ -528,6 +529,7 @@ typedef struct mm_camera_obj {
 
 typedef struct {
     int8_t num_cam;
+    mm_camera_shim_ops_t cam_shim_ops;
     char video_dev_name[MM_CAMERA_MAX_NUM_SENSORS][MM_CAMERA_DEV_NAME_LEN];
     mm_camera_obj_t *cam_obj[MM_CAMERA_MAX_NUM_SENSORS];
     struct camera_info info[MM_CAMERA_MAX_NUM_SENSORS];
@@ -546,14 +548,12 @@ typedef enum {
 ***********************************************************************************/
 /* utility functions */
 /* set int32_t value */
-extern int32_t mm_camera_util_s_ctrl(int32_t fd,
-                                     uint32_t id,
-                                     int32_t *value);
+extern int32_t mm_camera_util_s_ctrl(mm_camera_obj_t *my_obj,
+        int stream_id, int32_t fd, uint32_t id, int32_t *value);
 
 /* get int32_t value */
-extern int32_t mm_camera_util_g_ctrl(int32_t fd,
-                                     uint32_t id,
-                                     int32_t *value);
+extern int32_t mm_camera_util_g_ctrl(mm_camera_obj_t *my_obj,
+        int stream_id, int32_t fd, uint32_t id, int32_t *value);
 
 /* send msg throught domain socket for fd mapping */
 extern int32_t mm_camera_util_sendmsg(mm_camera_obj_t *my_obj,
@@ -591,7 +591,8 @@ extern int32_t mm_camera_get_parms(mm_camera_obj_t *my_obj,
 extern int32_t mm_camera_map_buf(mm_camera_obj_t *my_obj,
                                  uint8_t buf_type,
                                  int fd,
-                                 size_t size);
+                                 size_t size,
+                                 void *buffer);
 extern int32_t mm_camera_map_bufs(mm_camera_obj_t *my_obj,
                                   const cam_buf_map_type_list *buf_map_list);
 extern int32_t mm_camera_unmap_buf(mm_camera_obj_t *my_obj,
@@ -666,7 +667,8 @@ extern int32_t mm_camera_map_stream_buf(mm_camera_obj_t *my_obj,
                                         uint32_t buf_idx,
                                         int32_t plane_idx,
                                         int fd,
-                                        size_t size);
+                                        size_t size,
+                                        void *buffer);
 extern int32_t mm_camera_map_stream_bufs(mm_camera_obj_t *my_obj,
                                          uint32_t ch_id,
                                          const cam_buf_map_type_list *buf_map_list);
@@ -712,7 +714,8 @@ extern int32_t mm_stream_map_buf(mm_stream_t *my_obj,
                                  uint32_t frame_idx,
                                  int32_t plane_idx,
                                  int fd,
-                                 size_t size);
+                                 size_t size,
+                                 void *buffer);
 extern int32_t mm_stream_map_bufs(mm_stream_t *my_obj,
                                   const cam_buf_map_type_list *buf_map_list);
 extern int32_t mm_stream_unmap_buf(mm_stream_t *my_obj,
@@ -755,4 +758,17 @@ extern int32_t mm_camera_cmd_thread_release(mm_camera_cmd_thread_t * cmd_thread)
 extern int32_t mm_camera_channel_advanced_capture(mm_camera_obj_t *my_obj,
         uint32_t ch_id, mm_camera_advanced_capture_t type,
         uint32_t trigger, void *in_value);
+int32_t mm_camera_enqueue_evt(mm_camera_obj_t *my_obj,
+                              mm_camera_event_t *event);
+int32_t mm_camera_load_shim_lib();
+cam_shim_packet_t *mm_camera_create_shim_cmd_packet(cam_shim_cmd_type type,
+        uint32_t sessionID, void *data);
+int32_t mm_camera_destroy_shim_cmd_packet(cam_shim_packet_t *cmd);
+int32_t mm_camera_module_event_handler(
+        uint32_t session_id, cam_event_t *event);
+cam_status_t mm_camera_module_open_session(int sessionid,
+        int (*event_cb)(uint32_t sessionid, cam_event_t *event));
+int32_t mm_camera_module_close_session(int session);
+int32_t mm_camera_module_send_cmd(cam_shim_packet_t *event);
+
 #endif /* __MM_CAMERA_H__ */

@@ -959,16 +959,13 @@ int32_t mm_stream_fsm_active(mm_stream_t * my_obj,
  *              -1 -- failure
  *==========================================================================*/
 static int32_t mm_stream_map_buf_ops(uint32_t frame_idx,
-                                     int32_t plane_idx,
-                                     int fd,
-                                     size_t size,
-                                     cam_mapping_buf_type type,
-                                     void *userdata)
+        int32_t plane_idx, int fd, size_t size,
+        void *buffer, cam_mapping_buf_type type,
+        void *userdata)
 {
     mm_stream_t *my_obj = (mm_stream_t *)userdata;
     return mm_stream_map_buf(my_obj,
-                             type,
-                             frame_idx, plane_idx, fd, size);
+            type, frame_idx, plane_idx, fd, size, buffer);
 }
 
 /*===========================================================================
@@ -1107,8 +1104,25 @@ int32_t mm_stream_release(mm_stream_t *my_obj)
     pthread_mutex_unlock(&my_obj->buf_lock);
 
     /* close fd */
-    if(my_obj->fd >= 0)
-    {
+    if (my_obj->fd >= 0) {
+#ifndef DAEMON_PRESENT
+        int32_t rc = 0;
+        cam_shim_packet_t *shim_cmd;
+        cam_shim_cmd_data shim_cmd_data;
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+
+        memset(&shim_cmd_data, 0, sizeof(shim_cmd_data));
+        shim_cmd_data.command = MSM_CAMERA_PRIV_DEL_STREAM;
+        shim_cmd_data.stream_id = my_obj->server_stream_id;
+        shim_cmd_data.value = NULL;
+        shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_SET_PARM,
+                cam_obj->sessionid, &shim_cmd_data);
+        rc = mm_camera_module_send_cmd(shim_cmd);
+        if (rc < 0) {
+            LOGE("failed to DELETE STREAM");
+        }
+        mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif /* DAEMON_PRESENT */
         close(my_obj->fd);
     }
 
@@ -1159,13 +1173,49 @@ int32_t mm_stream_streamon(mm_stream_t *my_obj)
 
     pthread_mutex_unlock(&my_obj->buf_lock);
 
-    rc = ioctl(my_obj->fd, VIDIOC_STREAMON, &buf_type);
     if (rc < 0) {
         CDBG_ERROR("%s: ioctl VIDIOC_STREAMON failed: rc=%d\n",
                    __func__, rc);
         /* remove fd from data poll thread in case of failure */
         mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0], my_obj->my_hdl, mm_camera_sync_call);
     }
+    mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+    CDBG("E, my_handle = 0x%x, fd = %d, state = %d session_id:%d stream_id:%d",
+            my_obj->my_hdl, my_obj->fd, my_obj->state, cam_obj->sessionid,
+            my_obj->server_stream_id);
+
+    rc = ioctl(my_obj->fd, VIDIOC_STREAMON, &buf_type);
+    if (rc < 0 && my_obj->stream_info->num_bufs != 0) {
+        CDBG_ERROR("ioctl VIDIOC_STREAMON failed: rc=%d, errno %d",
+                rc, errno);
+        goto error_case;
+    }
+
+#ifndef DAEMON_PRESENT
+    cam_shim_packet_t *shim_cmd;
+    cam_shim_cmd_data shim_cmd_data;
+
+    memset(&shim_cmd_data, 0, sizeof(shim_cmd_data));
+    shim_cmd_data.command = MSM_CAMERA_PRIV_STREAM_ON;
+    shim_cmd_data.stream_id = my_obj->server_stream_id;
+    shim_cmd_data.value = NULL;
+    shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_SET_PARM,
+            cam_obj->sessionid, &shim_cmd_data);
+    rc = mm_camera_module_send_cmd(shim_cmd);
+    mm_camera_destroy_shim_cmd_packet(shim_cmd);
+    if (rc < 0) {
+        LOGE("Module StreamON failed: rc=%d", rc);
+        ioctl(my_obj->fd, VIDIOC_STREAMOFF, &buf_type);
+        goto error_case;
+    }
+#endif
+    LOGD("X rc = %d",rc);
+    return rc;
+error_case:
+     /* remove fd from data poll thread in case of failure */
+     mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0],
+             my_obj->my_hdl, mm_camera_sync_call);
+
     CDBG("%s :X rc = %d",__func__,rc);
     return rc;
 }
@@ -1199,16 +1249,34 @@ int32_t mm_stream_streamoff(mm_stream_t *my_obj)
         if (rc < 0) {
             CDBG_ERROR("%s: Poll sync failed %d",
                  __func__, rc);
+            rc = 0;
         }
     }
 
-    /* step2: stream off */
-    rc = ioctl(my_obj->fd, VIDIOC_STREAMOFF, &buf_type);
+#ifndef DAEMON_PRESENT
+    cam_shim_packet_t *shim_cmd;
+    cam_shim_cmd_data shim_cmd_data;
+    mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+
+    memset(&shim_cmd_data, 0, sizeof(shim_cmd_data));
+    shim_cmd_data.command = MSM_CAMERA_PRIV_STREAM_OFF;
+    shim_cmd_data.stream_id = my_obj->server_stream_id;
+    shim_cmd_data.value = NULL;
+    shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_SET_PARM,
+            cam_obj->sessionid, &shim_cmd_data);
+
+    rc |= mm_camera_module_send_cmd(shim_cmd);
+    mm_camera_destroy_shim_cmd_packet(shim_cmd);
     if (rc < 0) {
-        CDBG_ERROR("%s: STREAMOFF failed: %s\n",
-                __func__, strerror(errno));
+        LOGE("Module StreamOFF failed: rc=%d", rc)
     }
-    CDBG("%s :X rc = %d",__func__,rc);
+#endif
+
+    /* step2: stream off */
+    rc |= ioctl(my_obj->fd, VIDIOC_STREAMOFF, &buf_type);
+    if (rc < 0) {
+        CDBG_ERROR("STREAMOFF ioctl failed: %s", strerror(errno));
+    }
     return rc;
 }
 
@@ -1512,7 +1580,13 @@ int32_t mm_stream_set_parm(mm_stream_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (in_value != NULL) {
-        rc = mm_camera_util_s_ctrl(my_obj->fd, CAM_PRIV_STREAM_PARM, &value);
+      mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+      int stream_id = my_obj->server_stream_id;
+      rc = mm_camera_util_s_ctrl(cam_obj, stream_id, my_obj->fd,
+              CAM_PRIV_STREAM_PARM, &value);
+      if (rc < 0) {
+        CDBG_ERROR("Failed to set stream parameter type = %d", in_value->type);
+      }
     }
     return rc;
 }
@@ -1539,7 +1613,10 @@ int32_t mm_stream_get_parm(mm_stream_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (in_value != NULL) {
-        rc = mm_camera_util_g_ctrl(my_obj->fd, CAM_PRIV_STREAM_PARM, &value);
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+        int stream_id = my_obj->server_stream_id;
+        rc = mm_camera_util_g_ctrl(cam_obj, stream_id, my_obj->fd,
+              CAM_PRIV_STREAM_PARM, &value);
     }
     return rc;
 }
@@ -1566,7 +1643,10 @@ int32_t mm_stream_do_action(mm_stream_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (in_value != NULL) {
-        rc = mm_camera_util_s_ctrl(my_obj->fd, CAM_PRIV_STREAM_PARM, &value);
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+        int stream_id = my_obj->server_stream_id;
+        rc = mm_camera_util_s_ctrl(cam_obj, stream_id, my_obj->fd,
+              CAM_PRIV_STREAM_PARM, &value);
     }
     return rc;
 }
@@ -1600,8 +1680,23 @@ int32_t mm_stream_set_ext_mode(mm_stream_t * my_obj)
     CDBG("%s:stream fd=%d, rc=%d, extended_mode=%d\n",
          __func__, my_obj->fd, rc, s_parm.parm.capture.extendedmode);
     if (rc == 0) {
-        /* get server stream id */
         my_obj->server_stream_id = s_parm.parm.capture.extendedmode;
+#ifndef DAEMON_PRESENT
+        cam_shim_packet_t *shim_cmd;
+        cam_shim_cmd_data shim_cmd_data;
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+
+        memset(&shim_cmd_data, 0, sizeof(shim_cmd_data));
+        shim_cmd_data.command = MSM_CAMERA_PRIV_NEW_STREAM;
+        shim_cmd_data.stream_id = my_obj->server_stream_id;
+        shim_cmd_data.value = NULL;
+        shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_SET_PARM,
+                cam_obj->sessionid, &shim_cmd_data);
+        rc = mm_camera_module_send_cmd(shim_cmd);
+        mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif /* DAEMON_PRESENT */
+    } else {
+        CDBG_ERROR("VIDIOC_S_PARM  extendedmode error");
     }
     return rc;
 }
@@ -1810,11 +1905,9 @@ int8_t mm_stream_need_wait_for_mapping(mm_stream_t * my_obj)
  *              -1 -- failure
  *==========================================================================*/
 int32_t mm_stream_map_buf(mm_stream_t * my_obj,
-                          uint8_t buf_type,
-                          uint32_t frame_idx,
-                          int32_t plane_idx,
-                          int32_t fd,
-                          size_t size)
+        uint8_t buf_type, uint32_t frame_idx,
+        int32_t plane_idx, int32_t fd,
+        size_t size, void *buffer)
 {
     int32_t rc = 0;
     int8_t i;
@@ -1832,9 +1925,17 @@ int32_t mm_stream_map_buf(mm_stream_t * my_obj,
     packet.payload.buf_map.stream_id = my_obj->server_stream_id;
     packet.payload.buf_map.frame_idx = frame_idx;
     packet.payload.buf_map.plane_idx = plane_idx;
+    packet.payload.buf_map.buffer = buffer;
+#ifdef DAEMON_PRESENT
     rc = mm_camera_util_sendmsg(my_obj->ch_obj->cam_obj,
             &packet, sizeof(cam_sock_packet_t), fd);
-
+#else
+    cam_shim_packet_t *shim_cmd;
+    shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_REG_BUF,
+            my_obj->ch_obj->cam_obj->sessionid, &packet);
+    rc = mm_camera_module_send_cmd(shim_cmd);
+    mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif
     if ((buf_type == CAM_MAPPING_BUF_TYPE_STREAM_BUF)
             || ((buf_type
             == CAM_MAPPING_BUF_TYPE_STREAM_USER_BUF)
@@ -1900,8 +2001,16 @@ int32_t mm_stream_map_bufs(mm_stream_t * my_obj,
         sendfds[i] = -1;
     }
 
+#ifdef DAEMON_PRESENT
     int32_t ret = mm_camera_util_bundled_sendmsg(my_obj->ch_obj->cam_obj,
             &packet, sizeof(cam_sock_packet_t), sendfds, numbufs);
+#else
+    cam_shim_packet_t *shim_cmd;
+    shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_REG_BUF,
+            my_obj->ch_obj->cam_obj->sessionid, &packet);
+    int32_t ret = mm_camera_module_send_cmd(shim_cmd);
+    mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif
     if ((numbufs > 0) && ((buf_map_list->buf_maps[0].type
             == CAM_MAPPING_BUF_TYPE_STREAM_BUF)
             || ((buf_map_list->buf_maps[0].type ==
@@ -1951,6 +2060,7 @@ int32_t mm_stream_unmap_buf(mm_stream_t * my_obj,
                             uint32_t frame_idx,
                             int32_t plane_idx)
 {
+    int32_t ret;
     if (NULL == my_obj || NULL == my_obj->ch_obj || NULL == my_obj->ch_obj->cam_obj) {
         CDBG_ERROR("%s: NULL obj of stream/channel/camera", __func__);
         return -1;
@@ -1962,10 +2072,16 @@ int32_t mm_stream_unmap_buf(mm_stream_t * my_obj,
     packet.payload.buf_unmap.stream_id = my_obj->server_stream_id;
     packet.payload.buf_unmap.frame_idx = frame_idx;
     packet.payload.buf_unmap.plane_idx = plane_idx;
-    int32_t ret = mm_camera_util_sendmsg(my_obj->ch_obj->cam_obj,
-            &packet,
-            sizeof(cam_sock_packet_t),
-            -1);
+#ifdef DAEMON_PRESENT
+    ret = mm_camera_util_sendmsg(my_obj->ch_obj->cam_obj,
+            &packet, sizeof(cam_sock_packet_t), -1);
+#else
+    cam_shim_packet_t *shim_cmd;
+    shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_REG_BUF,
+            my_obj->ch_obj->cam_obj->sessionid, &packet);
+    ret = mm_camera_module_send_cmd(shim_cmd);
+    mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif
     pthread_mutex_lock(&my_obj->buf_lock);
     my_obj->buf_status[frame_idx].is_mapped = 0;
     pthread_mutex_unlock(&my_obj->buf_lock);
@@ -4210,9 +4326,10 @@ int32_t mm_stream_sync_info(mm_stream_t *my_obj)
     rc = mm_stream_calc_offset(my_obj);
 
     if (rc == 0) {
-        rc = mm_camera_util_s_ctrl(my_obj->fd,
-                                   CAM_PRIV_STREAM_INFO_SYNC,
-                                   &value);
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+        int stream_id  =  my_obj->server_stream_id;
+        rc = mm_camera_util_s_ctrl(cam_obj, stream_id, my_obj->fd,
+                CAM_PRIV_STREAM_INFO_SYNC, &value);
     }
     return rc;
 }
@@ -4271,6 +4388,24 @@ int32_t mm_stream_set_fmt(mm_stream_t *my_obj)
 
     memcpy(fmt.fmt.raw_data, &msm_fmt, sizeof(msm_fmt));
     rc = ioctl(my_obj->fd, VIDIOC_S_FMT, &fmt);
+    if (rc < 0) {
+        CDBG_ERROR("ioctl VIDIOC_S_FMT failed: rc=%d errno %d\n", rc, errno);
+    } else {
+#ifndef DAEMON_PRESENT
+        mm_camera_obj_t *cam_obj = my_obj->ch_obj->cam_obj;
+        cam_shim_packet_t *shim_cmd;
+        cam_shim_cmd_data shim_cmd_data;
+
+        memset(&shim_cmd_data, 0, sizeof(shim_cmd_data));
+        shim_cmd_data.command = MSM_CAMERA_PRIV_S_FMT;
+        shim_cmd_data.stream_id = my_obj->server_stream_id;
+        shim_cmd_data.value = NULL;
+        shim_cmd = mm_camera_create_shim_cmd_packet(CAM_SHIM_SET_PARM,
+                cam_obj->sessionid, &shim_cmd_data);
+        rc = mm_camera_module_send_cmd(shim_cmd);
+        mm_camera_destroy_shim_cmd_packet(shim_cmd);
+#endif /* DAEMON_PRESENT */
+    }
     return rc;
 }
 
