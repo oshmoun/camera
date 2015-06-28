@@ -17,6 +17,11 @@ MM_CAM_FILES := \
         src/mm_camera_thread.c \
         src/mm_camera_sock.c
 
+ifeq ($(CAMERA_DAEMON_NOT_PRESENT), true)
+else
+LOCAL_CFLAGS += -DDAEMON_PRESENT
+endif
+
 ifeq ($(strip $(TARGET_USES_ION)),true)
     LOCAL_CFLAGS += -DUSE_ION
 endif
@@ -43,11 +48,6 @@ LOCAL_CFLAGS += -DCAMERA_ION_HEAP_ID=ION_IOMMU_HEAP_ID
 LOCAL_C_INCLUDES+= $(kernel_includes)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(common_deps)
 
-ifeq (1,$(filter 1,$(shell echo "$$(( $(PLATFORM_SDK_VERSION) >= 24 ))" )))
-LOCAL_C_INCLUDES += hardware/qcom/media/msm8974/mm-core/inc
-else
-LOCAL_C_INCLUDES += hardware/qcom/media/mm-core/inc
-endif
 
 ifneq (1,$(filter 1,$(shell echo "$$(( $(PLATFORM_SDK_VERSION) >= 17 ))" )))
   LOCAL_CFLAGS += -include bionic/libc/kernel/common/linux/socket.h

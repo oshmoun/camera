@@ -36,6 +36,7 @@
 #include <poll.h>
 #include <cutils/properties.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 
 #include <cam_semaphore.h>
 
@@ -55,6 +56,8 @@ int32_t mm_camera_evt_sub(mm_camera_obj_t * my_obj,
                           uint8_t reg_flag);
 int32_t mm_camera_enqueue_evt(mm_camera_obj_t *my_obj,
                               mm_camera_event_t *event);
+extern mm_camera_obj_t* mm_camera_util_get_camera_by_session_id
+        (uint32_t session_id);
 
 /*===========================================================================
  * FUNCTION   : mm_camera_util_get_channel_by_handler
@@ -298,7 +301,6 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
         if((my_obj->ctrl_fd >= 0) ||
                 (errno != EIO && errno != ETIMEDOUT && errno != ENODEV) ||
                 (n_try <= 0 )) {
-            CDBG_HIGH("%s:  opened, break out while loop", __func__);
             if (my_obj->ctrl_fd < 0) {
                     ALOGE("%s: Failed to open %s: %s(%d).", __func__, dev_name,
                             strerror(-errno), errno);
@@ -318,6 +320,9 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
         else
             rc = -1;
         goto on_error;
+    } else {
+        mm_camera_get_session_id(my_obj, &my_obj->sessionid);
+        CDBG_HIGH("Camera Opened id = %d sessionid = %d", cam_idx, my_obj->sessionid);
     }
 
     /* open domain socket*/
@@ -665,7 +670,8 @@ int32_t mm_camera_set_parms(mm_camera_obj_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (parms !=  NULL) {
-        rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd, CAM_PRIV_PARM, &value);
+        rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd,
+            CAM_PRIV_PARM, &value);
     }
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
@@ -695,7 +701,7 @@ int32_t mm_camera_get_parms(mm_camera_obj_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (parms != NULL) {
-        rc = mm_camera_util_g_ctrl(my_obj->ctrl_fd, CAM_PRIV_PARM, &value);
+        rc = mm_camera_util_g_ctrl(my_obj, 0, my_obj->ctrl_fd, CAM_PRIV_PARM, &value);
     }
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
@@ -719,7 +725,7 @@ int32_t mm_camera_do_auto_focus(mm_camera_obj_t *my_obj)
 {
     int32_t rc = -1;
     int32_t value = 0;
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd, CAM_PRIV_DO_AUTO_FOCUS, &value);
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd, CAM_PRIV_DO_AUTO_FOCUS, &value);
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
 }
@@ -740,7 +746,7 @@ int32_t mm_camera_cancel_auto_focus(mm_camera_obj_t *my_obj)
 {
     int32_t rc = -1;
     int32_t value = 0;
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd, CAM_PRIV_CANCEL_AUTO_FOCUS, &value);
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd, CAM_PRIV_CANCEL_AUTO_FOCUS, &value);
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
 }
@@ -763,7 +769,7 @@ int32_t mm_camera_prepare_snapshot(mm_camera_obj_t *my_obj,
 {
     int32_t rc = -1;
     int32_t value = do_af_flag;
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd, CAM_PRIV_PREPARE_SNAPSHOT, &value);
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd, CAM_PRIV_PREPARE_SNAPSHOT, &value);
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
 }
@@ -785,7 +791,7 @@ int32_t mm_camera_start_zsl_snapshot(mm_camera_obj_t *my_obj)
     int32_t rc = -1;
     int32_t value = 0;
 
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd,
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd,
              CAM_PRIV_START_ZSL_SNAPSHOT, &value);
     return rc;
 }
@@ -806,7 +812,7 @@ int32_t mm_camera_stop_zsl_snapshot(mm_camera_obj_t *my_obj)
 {
     int32_t rc = -1;
     int32_t value;
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd,
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd,
              CAM_PRIV_STOP_ZSL_SNAPSHOT, &value);
     return rc;
 }
@@ -827,7 +833,7 @@ int32_t mm_camera_flush(mm_camera_obj_t *my_obj)
 {
     int32_t rc = -1;
     int32_t value;
-    rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd,
+    rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd,
             CAM_PRIV_FLUSH, &value);
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
@@ -1580,7 +1586,8 @@ int32_t mm_camera_map_stream_buf(mm_camera_obj_t *my_obj,
                                  uint32_t buf_idx,
                                  int32_t plane_idx,
                                  int fd,
-                                 size_t size)
+                                 size_t size,
+                                 void *buffer)
 {
     int32_t rc = -1;
     cam_buf_map_type payload;
@@ -1598,6 +1605,7 @@ int32_t mm_camera_map_stream_buf(mm_camera_obj_t *my_obj,
         payload.plane_idx = plane_idx;
         payload.fd = fd;
         payload.size = size;
+        payload.buffer = buffer;
         rc = mm_channel_fsm_fn(ch_obj,
                                MM_CHANNEL_EVT_MAP_STREAM_BUF,
                                (void*)&payload,
@@ -1883,9 +1891,7 @@ int32_t mm_camera_util_sendmsg(mm_camera_obj_t *my_obj,
  *              -1 -- failure
  *==========================================================================*/
 int32_t mm_camera_map_buf(mm_camera_obj_t *my_obj,
-                          uint8_t buf_type,
-                          int fd,
-                          size_t size)
+        uint8_t buf_type, int fd, size_t size, void *buffer)
 {
     int32_t rc = 0;
     cam_sock_packet_t packet;
@@ -1894,6 +1900,7 @@ int32_t mm_camera_map_buf(mm_camera_obj_t *my_obj,
     packet.payload.buf_map.type = buf_type;
     packet.payload.buf_map.fd = fd;
     packet.payload.buf_map.size = size;
+    packet.payload.buf_map.buffer = buffer;
     rc = mm_camera_util_sendmsg(my_obj,
                                 &packet,
                                 sizeof(cam_sock_packet_t),
@@ -1931,18 +1938,17 @@ int32_t mm_camera_map_bufs(mm_camera_obj_t *my_obj,
     uint32_t i;
     for (i = 0; i < numbufs; i++) {
         sendfds[i] = packet.payload.buf_map_list.buf_maps[i].fd;
+        packet.payload.buf_map_list.buf_maps[i].buffer =
+                buf_map_list->buf_maps[i].buffer;
     }
-
     for (i = numbufs; i < CAM_MAX_NUM_BUFS_PER_STREAM; i++) {
         packet.payload.buf_map_list.buf_maps[i].fd = -1;
         sendfds[i] = -1;
     }
 
     rc = mm_camera_util_bundled_sendmsg(my_obj,
-                                        &packet,
-                                        sizeof(cam_sock_packet_t),
-                                        sendfds,
-                                        numbufs);
+            &packet, sizeof(cam_sock_packet_t),
+            sendfds, numbufs);
 
     pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
@@ -1986,6 +1992,8 @@ int32_t mm_camera_unmap_buf(mm_camera_obj_t *my_obj,
  * DESCRIPTION: utility function to send v4l2 ioctl for s_ctrl
  *
  * PARAMETERS :
+ *   @my_obj     :Camera object
+ *   @stream_id :streamID
  *   @fd      : file descritpor for sending ioctl
  *   @id      : control id
  *   @value   : value of the ioctl to be sent
@@ -1994,7 +2002,9 @@ int32_t mm_camera_unmap_buf(mm_camera_obj_t *my_obj,
  *              0  -- success
  *              -1 -- failure
  *==========================================================================*/
-int32_t mm_camera_util_s_ctrl(int32_t fd,  uint32_t id, int32_t *value)
+int32_t mm_camera_util_s_ctrl(__unused mm_camera_obj_t *my_obj,
+        __unused int stream_id, int32_t fd,
+        uint32_t id, int32_t *value)
 {
     int rc = 0;
     struct v4l2_control control;
@@ -2020,6 +2030,8 @@ int32_t mm_camera_util_s_ctrl(int32_t fd,  uint32_t id, int32_t *value)
  * DESCRIPTION: utility function to send v4l2 ioctl for g_ctrl
  *
  * PARAMETERS :
+ *   @my_obj     :Camera object
+ *   @stream_id :streamID
  *   @fd      : file descritpor for sending ioctl
  *   @id      : control id
  *   @value   : value of the ioctl to be sent
@@ -2028,7 +2040,8 @@ int32_t mm_camera_util_s_ctrl(int32_t fd,  uint32_t id, int32_t *value)
  *              0  -- success
  *              -1 -- failure
  *==========================================================================*/
-int32_t mm_camera_util_g_ctrl( int32_t fd, uint32_t id, int32_t *value)
+int32_t mm_camera_util_g_ctrl(__unused mm_camera_obj_t *my_obj,
+        __unused int stream_id, int32_t fd, uint32_t id, int32_t *value)
 {
     int rc = 0;
     struct v4l2_control control;
@@ -2137,16 +2150,18 @@ int32_t mm_camera_get_session_id(mm_camera_obj_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if(sessionid != NULL) {
-        rc = mm_camera_util_g_ctrl(my_obj->ctrl_fd,
-                MSM_CAMERA_PRIV_G_SESSION_ID, &value);
+        struct v4l2_control control;
+        memset(&control, 0, sizeof(control));
+        control.id = MSM_CAMERA_PRIV_G_SESSION_ID;
+        control.value = value;
+
+        rc = ioctl(my_obj->ctrl_fd, VIDIOC_G_CTRL, &control);
+        value = control.value;
         CDBG("%s: fd=%d, get_session_id, id=0x%x, value = %d, rc = %d\n",
                 __func__, my_obj->ctrl_fd, MSM_CAMERA_PRIV_G_SESSION_ID,
                 value, rc);
         *sessionid = value;
-        my_obj->sessionid = value;
     }
-
-    pthread_mutex_unlock(&my_obj->cam_lock);
     return rc;
 }
 
@@ -2172,7 +2187,7 @@ int32_t mm_camera_sync_related_sensors(mm_camera_obj_t *my_obj,
     int32_t rc = -1;
     int32_t value = 0;
     if (parms !=  NULL) {
-        rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd,
+        rc = mm_camera_util_s_ctrl(my_obj, 0, my_obj->ctrl_fd,
                 CAM_PRIV_SYNC_RELATED_SENSORS, &value);
     }
     pthread_mutex_unlock(&my_obj->cam_lock);
