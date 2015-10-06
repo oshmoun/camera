@@ -47,9 +47,15 @@
 #define MM_CAMERA_CHANNEL_POLL_THREAD_MAX 1
 
 #define MM_CAMERA_DEV_NAME_LEN 32
-#define MM_CAMERA_DEV_OPEN_TRIES 30
+#define MM_CAMERA_DEV_OPEN_TRIES 2
 #define MM_CAMERA_DEV_OPEN_RETRY_SLEEP 20
 #define THREAD_NAME_SIZE 15
+
+/* Future frame idx, large enough to make sure capture
+* settings can be applied and small enough to still capture an image */
+#define MM_CAMERA_MAX_FUTURE_FRAME_WAIT 100
+
+#define WAIT_TIMEOUT 5
 
 #ifndef TRUE
 #define TRUE 1
@@ -223,7 +229,7 @@ typedef struct {
     /* indicate if buf is in kernel(1) or client(0) */
     uint8_t in_kernel;
     /*indicate if this buffer is mapped to daemon*/
-    uint8_t is_mapped;
+    int8_t map_status;
 } mm_stream_buf_status_t;
 
 typedef struct mm_stream {
@@ -369,7 +375,6 @@ typedef struct {
     uint32_t once;
     uint32_t frame_skip_count;
     uint32_t nomatch_frame_id;
-    uint32_t frame_num_for_instant_capture;
 } mm_channel_queue_t;
 
 typedef struct {
@@ -467,16 +472,16 @@ typedef struct mm_channel {
     uint32_t burstSnapNum;
     char threadName[THREAD_NAME_SIZE];
 
-    /*Frame capture configaration*/
-    uint8_t isConfigCapture;
-    uint8_t cur_capture_idx;
-
     /*Buffer diverted*/
     uint8_t diverted_frame_id;
     uint32_t sessionid;
 
-    uint8_t capture_frame_id[MAX_CAPTURE_BATCH_NUM];
+    /*Frame capture configaration*/
+    uint8_t isConfigCapture;
+    uint8_t cur_capture_idx;
+    uint32_t capture_frame_id[MAX_CAPTURE_BATCH_NUM];
     cam_capture_frame_config_t frameConfig;
+    uint8_t needLowLightZSL;
 } mm_channel_t;
 
 typedef struct {
