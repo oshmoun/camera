@@ -770,6 +770,8 @@ private:
     //Gralloc memory details
     pthread_mutex_t mGrallocLock;
     uint8_t mEnqueuedBuffers;
+    Mutex mMapLock;
+    Condition mMapCond;
 };
 
 }; // namespace qcamera
