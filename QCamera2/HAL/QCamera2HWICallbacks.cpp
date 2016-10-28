@@ -872,9 +872,9 @@ void QCamera2HardwareInterface::preview_stream_cb_routine(mm_camera_super_buf_t 
                     // Signal the condition for create jpeg session
                     Mutex::Autolock l(pme->mMapLock);
                     pme->mMapCond.signal();
-                    LOGI("Mapping done for all bufs");
+                    CDBG("Mapping done for all bufs");
                 } else {
-                    LOGH("All buffers are not yet mapped");
+                    CDBG_HIGH("All buffers are not yet mapped");
                 }
             }
         }

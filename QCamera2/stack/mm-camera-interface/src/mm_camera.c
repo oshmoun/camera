@@ -2181,7 +2181,7 @@ cam_shim_packet_t *mm_camera_create_shim_cmd_packet(cam_shim_cmd_type type,
 
     shim_pack = (cam_shim_packet_t *)malloc(sizeof(cam_shim_packet_t));
     if (shim_pack == NULL) {
-        LOGE("Cannot allocate a memory for shim packet");
+        ALOGE("Cannot allocate a memory for shim packet");
         return NULL;
     }
     memset(shim_pack, 0, sizeof(cam_shim_packet_t));
@@ -2208,7 +2208,7 @@ cam_shim_packet_t *mm_camera_create_shim_cmd_packet(cam_shim_cmd_type type,
             break;
         }
         default:
-            LOGW("No Data for this command");
+            ALOGW("No Data for this command");
     }
     return shim_pack;
 }
@@ -2231,7 +2231,7 @@ int32_t mm_camera_destroy_shim_cmd_packet(cam_shim_packet_t *cmd)
     uint32_t i = 0, j = 0;
 
     if (cmd == NULL) {
-        LOGW("Command is NULL");
+        ALOGW("Command is NULL");
         return rc;
     }
 
@@ -2257,7 +2257,7 @@ int32_t mm_camera_destroy_shim_cmd_packet(cam_shim_packet_t *cmd)
             break;
         }
         default:
-            LOGW("No Data for this command");
+            ALOGW("No Data for this command");
     }
     free(cmd);
     cmd = NULL;

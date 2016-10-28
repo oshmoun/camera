@@ -2323,7 +2323,7 @@ uint8_t QCameraGrallocMemory::getMappable() const
  *==========================================================================*/
 uint8_t QCameraGrallocMemory::checkIfAllBuffersMapped() const
 {
-    LOGH("mBufferCount: %d, mMappableBuffers: %d",
+    CDBG_HIGH("mBufferCount: %d, mMappableBuffers: %d",
              mBufferCount, mMappableBuffers);
     return (mBufferCount == mMappableBuffers);
 }

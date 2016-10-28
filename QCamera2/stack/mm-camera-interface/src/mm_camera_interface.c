@@ -39,6 +39,7 @@
 #include <media/msm_cam_sensor.h>
 #include <cutils/properties.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 
 #include "mm_camera_dbg.h"
 #include "mm_camera_interface.h"
@@ -46,7 +47,7 @@
 
 static pthread_mutex_t g_intf_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static mm_camera_ctrl_t g_cam_ctrl = {0, {{0}}, {0}, {{0}}, {0}, {0}, {0}};
+static mm_camera_ctrl_t g_cam_ctrl;
 
 static pthread_mutex_t g_handler_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint16_t g_handler_history_count = 0; /* history count for handler */
@@ -157,7 +158,7 @@ mm_camera_obj_t* mm_camera_util_get_camera_by_session_id(uint32_t session_id)
    for (cam_idx = 0; cam_idx < MM_CAMERA_MAX_NUM_SENSORS; cam_idx++) {
         if ((NULL != g_cam_ctrl.cam_obj[cam_idx]) &&
                 (session_id == (uint32_t)g_cam_ctrl.cam_obj[cam_idx]->sessionid)) {
-            LOGD("session id:%d match idx:%d\n", session_id, cam_idx);
+            CDBG("session id:%d match idx:%d\n", session_id, cam_idx);
             cam_obj = g_cam_ctrl.cam_obj[cam_idx];
         }
     }
@@ -1822,7 +1823,7 @@ uint8_t get_num_of_cameras()
     memset (&g_cam_ctrl, 0, sizeof (g_cam_ctrl));
 #ifndef DAEMON_PRESENT
     if (mm_camera_load_shim_lib() < 0) {
-        LOGE ("Failed to module shim library");
+        CDBG_ERROR ("Failed to module shim library");
         return 0;
     }
 #endif /* DAEMON_PRESENT */
@@ -2180,11 +2181,11 @@ int32_t mm_camera_load_shim_lib()
     const char* error = NULL;
     void *qdaemon_lib = NULL;
 
-    LOGD("E");
+    CDBG("E");
     qdaemon_lib = dlopen(SHIMLAYER_LIB, RTLD_NOW);
     if (!qdaemon_lib) {
         error = dlerror();
-        LOGE("dlopen failed with error %s", error ? error : "");
+        CDBG_ERROR("dlopen failed with error %s", error ? error : "");
         return -1;
     }
 
@@ -2192,7 +2193,7 @@ int32_t mm_camera_load_shim_lib()
             dlsym(qdaemon_lib, "mct_shimlayer_process_module_init");
     if (!mm_camera_shim_module_init) {
         error = dlerror();
-        LOGE("dlsym failed with error code %s", error ? error: "");
+        CDBG_ERROR("dlsym failed with error code %s", error ? error: "");
         dlclose(qdaemon_lib);
         return -1;
     }
@@ -2279,19 +2280,19 @@ int32_t mm_camera_module_send_cmd(cam_shim_packet_t *event)
 int mm_camera_module_event_handler(uint32_t session_id, cam_event_t *event)
 {
     if (!event) {
-        LOGE("null event");
+        CDBG_ERROR("null event");
         return FALSE;
     }
     mm_camera_event_t evt;
 
-    LOGD("session_id:%d, cmd:0x%x", session_id, event->server_event_type);
+    CDBG("session_id:%d, cmd:0x%x", session_id, event->server_event_type);
     memset(&evt, 0, sizeof(mm_camera_event_t));
 
     evt = *event;
     mm_camera_obj_t *my_obj =
          mm_camera_util_get_camera_by_session_id(session_id);
     if (!my_obj) {
-        LOGE("my_obj:%p", my_obj);
+        CDBG_ERROR("my_obj:%p", my_obj);
         return FALSE;
     }
     switch( evt.server_event_type) {
@@ -2303,7 +2304,7 @@ int mm_camera_module_event_handler(uint32_t session_id, cam_event_t *event)
            mm_camera_enqueue_evt(my_obj, &evt);
            break;
        default:
-           LOGE("cmd:%x from shim layer is not handled", evt.server_event_type);
+           CDBG_ERROR("cmd:%x from shim layer is not handled", evt.server_event_type);
            break;
    }
    return TRUE;

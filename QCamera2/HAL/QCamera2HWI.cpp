@@ -4238,10 +4238,10 @@ int QCamera2HardwareInterface::takePicture()
 
                 uint8_t waitCnt = 2;
                 while (!pMemory->checkIfAllBuffersMapped() && (waitCnt > 0)) {
-                    LOGH(" Waiting for preview buffers to be mapped");
+                    CDBG_HIGH(" Waiting for preview buffers to be mapped");
                     mMapCond.waitRelative(
                             mMapLock, CAMERA_DEFERRED_MAP_BUF_TIMEOUT);
-                    LOGH("Wait completed!!");
+                    CDBG_HIGH("Wait completed!!");
                     waitCnt--;
                 }
                 // If all buffers are not mapped after retries, assert
@@ -5061,16 +5061,16 @@ int QCamera2HardwareInterface::takeLiveSnapshot_internal()
             Mutex::Autolock l(mMapLock);
             QCameraMemory *pMemory = pStream->getStreamBufs();
             if (!pMemory) {
-                LOGE("Error!! pMemory is NULL");
+                ALOGE("Error!! pMemory is NULL");
                 return -ENOMEM;
             }
 
             uint8_t waitCnt = 2;
             while (!pMemory->checkIfAllBuffersMapped() && (waitCnt > 0)) {
-                LOGL(" Waiting for preview buffers to be mapped");
+                ALOGD(" Waiting for preview buffers to be mapped");
                 mMapCond.waitRelative(
                         mMapLock, CAMERA_DEFERRED_MAP_BUF_TIMEOUT);
-                LOGL("Wait completed!!");
+                ALOGD("Wait completed!!");
                 waitCnt--;
             }
             // If all buffers are not mapped after retries, assert

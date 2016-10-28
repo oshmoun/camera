@@ -43,6 +43,9 @@
 #include "mm_camera_interface.h"
 #include "mm_camera.h"
 
+#define WAIT_TIMEOUT 500000000L
+#define NSEC_PER_SEC 1000000000L
+
 /* internal function decalre */
 int32_t mm_stream_qbuf(mm_stream_t *my_obj,
                        mm_camera_buf_def_t *buf);
@@ -1153,7 +1156,7 @@ int32_t mm_stream_release(mm_stream_t *my_obj)
  *==========================================================================*/
 int32_t mm_stream_streamon(mm_stream_t *my_obj)
 {
-    int32_t rc;
+    int32_t rc = 0;
     int8_t i;
     enum v4l2_buf_type buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
@@ -1166,7 +1169,14 @@ int32_t mm_stream_streamon(mm_stream_t *my_obj)
                 (my_obj->buf_status[i].in_kernel)) {
             CDBG ("%s: waiting for mapping to done: strm fd = %d",
                     __func__, my_obj->fd);
-            pthread_cond_wait(&my_obj->buf_cond, &my_obj->buf_lock);
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += WAIT_TIMEOUT;
+            rc = pthread_cond_timedwait(&my_obj->buf_cond, &my_obj->buf_lock, &ts);
+            if (rc == ETIMEDOUT) {
+                CDBG_ERROR("Timed out. Abort stream-on \n");
+                rc = -1;
+            }
             break;
         }
     }
@@ -1209,7 +1219,7 @@ int32_t mm_stream_streamon(mm_stream_t *my_obj)
         goto error_case;
     }
 #endif
-    LOGD("X rc = %d",rc);
+    CDBG_ERROR("X rc = %d",rc);
     return rc;
 error_case:
      /* remove fd from data poll thread in case of failure */
