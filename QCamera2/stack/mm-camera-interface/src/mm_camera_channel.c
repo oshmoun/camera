@@ -1642,8 +1642,9 @@ int32_t mm_channel_start(mm_channel_t *my_obj)
             /* deinit superbuf queue */
             mm_channel_superbuf_queue_deinit(&my_obj->bundle.superbuf_queue);
 
-            /* memset bundle info */
-            memset(&my_obj->bundle, 0, sizeof(mm_channel_bundle_t));
+            /* memset super buffer queue info */
+            my_obj->bundle.is_active = 0;
+            memset(&my_obj->bundle.superbuf_queue, 0, sizeof(mm_channel_queue_t));
         }
     }
     my_obj->bWaitForPrepSnapshotDone = 0;

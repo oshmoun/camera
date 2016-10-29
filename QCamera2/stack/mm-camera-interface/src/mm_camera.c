@@ -50,8 +50,6 @@
 #define GET_PARM_BIT32(parm, parm_arr) \
     ((parm_arr[parm/32]>>(parm%32))& 0x1)
 
-#define WAIT_TIMEOUT 3
-
 /* internal function declare */
 int32_t mm_camera_evt_sub(mm_camera_obj_t * my_obj,
                           uint8_t reg_flag);
@@ -1781,12 +1779,17 @@ void mm_camera_util_wait_for_event(mm_camera_obj_t *my_obj,
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += WAIT_TIMEOUT;
         rc = pthread_cond_timedwait(&my_obj->evt_cond, &my_obj->evt_lock, &ts);
-        if (rc == ETIMEDOUT) {
-            ALOGE("%s pthread_cond_timedwait success\n", __func__);
+        if (rc) {
+            ALOGE("pthread_cond_timedwait of evt_mask 0x%x failed %d",
+                     evt_mask, rc);
             break;
         }
     }
-    *status = my_obj->evt_rcvd.status;
+    if (!rc) {
+        *status = my_obj->evt_rcvd.status;
+    } else {
+        *status = MSM_CAMERA_STATUS_FAIL;
+    }
     /* reset local storage for recieved event for next event */
     memset(&my_obj->evt_rcvd, 0, sizeof(mm_camera_event_t));
     pthread_mutex_unlock(&my_obj->evt_lock);

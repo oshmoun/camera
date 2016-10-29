@@ -2952,6 +2952,9 @@ int32_t QCameraParameters::setZoom(const QCameraParameters& params)
     }
 
     int zoomLevel = params.getInt(KEY_ZOOM);
+if(zoomLevel < 0) {
+zoomLevel = 0;
+}
     mParmZoomLevel = zoomLevel;
     if ((zoomLevel < 0) || (zoomLevel >= (int)m_pCapability->zoom_ratio_tbl_cnt)) {
         ALOGE("%s: invalid value %d out of (%d, %d)",
