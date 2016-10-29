@@ -83,7 +83,7 @@
 
 #define MAX_CAPTURE_BATCH_NUM 32
 
-#define TUNING_DATA_VERSION        3
+#define TUNING_DATA_VERSION        6
 #define TUNING_SENSOR_DATA_MAX     0x10000 /*(need value from sensor team)*/
 #define TUNING_VFE_DATA_MAX        0x10000 /*(need value from vfe team)*/
 #define TUNING_CPP_DATA_MAX        0x10000 /*(need value from pproc team)*/
@@ -1233,7 +1233,8 @@ typedef struct {
 
 typedef enum {
     CAM_SENSOR_RAW,
-    CAM_SENSOR_YUV
+    CAM_SENSOR_YUV,
+    CAM_SENSOR_Y,
 } cam_sensor_t;
 
 typedef struct {
@@ -1858,7 +1859,9 @@ typedef enum {
     CAM_INTF_AF_STATE_TRANSITION, /* 191 */
     /* Param for enabling instant aec*/
     CAM_INTF_PARM_INSTANT_AEC,
-    CAM_INTF_PARM_MAX /* 192 */
+    /* Param for updating initial exposure index value*/
+    CAM_INTF_PARM_INITIAL_EXPOSURE_INDEX,
+    CAM_INTF_PARM_MAX /* 194 */
 } cam_intf_parm_type_t;
 
 typedef struct {

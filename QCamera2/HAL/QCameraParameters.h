@@ -215,6 +215,7 @@ public:
     static const char KEY_QC_LONG_SHOT[];
     static const char KEY_QC_INSTANT_AEC[];
     static const char KEY_QC_INSTANT_CAPTURE[];
+    static const char KEY_QC_INITIAL_EXPOSURE_INDEX[];
 
     static const char KEY_QC_MANUAL_FOCUS_POSITION[];
     static const char KEY_QC_MANUAL_FOCUS_POS_TYPE[];
@@ -824,6 +825,7 @@ public:
             cam_related_system_calibration_data_t* calib);
     int32_t bundleRelatedCameras(bool sync, uint32_t sessionid);
     int32_t setInstantAEC(uint8_t enable, bool initCommit);
+    bool isFDInVideoEnabled();
 private:
     int32_t setPreviewSize(const QCameraParameters& );
     int32_t setVideoSize(const QCameraParameters& );
@@ -902,6 +904,7 @@ private:
     int32_t setCDSMode(const QCameraParameters& params);
     int32_t setInstantCapture(const QCameraParameters& params);
     int32_t setInstantAEC(const QCameraParameters& params);
+    int32_t setInitialExposureIndex(const QCameraParameters& params);
     int32_t setMobicat(const QCameraParameters& params);
     int32_t setRdiMode(const QCameraParameters& );
     int32_t setSecureMode(const QCameraParameters& );

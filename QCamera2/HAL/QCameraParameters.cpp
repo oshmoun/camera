@@ -197,6 +197,7 @@ const char QCameraParameters::KEY_QC_CACHE_VIDEO_BUFFERS[] = "cache-video-buffer
 const char QCameraParameters::KEY_QC_LONG_SHOT[] = "long-shot";
 const char QCameraParameters::KEY_QC_INSTANT_AEC[] = "instant-aec";
 const char QCameraParameters::KEY_QC_INSTANT_CAPTURE[] = "instant-capture";
+const char QCameraParameters::KEY_QC_INITIAL_EXPOSURE_INDEX[] = "initial-exp-index";
 
 // Values for effect settings.
 const char QCameraParameters::EFFECT_EMBOSS[] = "emboss";
@@ -4038,7 +4039,11 @@ int32_t QCameraParameters::setRecordingHint(const QCameraParameters& params)
                 updateParamEntry(KEY_RECORDING_HINT, str);
                 setRecordingHintValue(value);
                 if (getFaceDetectionOption() == true) {
-                    setFaceDetection(value > 0 ? false : true, false);
+                    if (!isFDInVideoEnabled()) {
+                        setFaceDetection(value > 0 ? false : true, false);
+                    } else {
+                        setFaceDetection(true, false);
+                    }
                 }
                 if (m_bDISEnabled) {
                     CDBG_HIGH("%s: %d: Setting DIS value again", __func__, __LINE__);
@@ -4842,6 +4847,7 @@ int32_t QCameraParameters::updateParameters(QCameraParameters& params,
     if ((rc = setCacheVideoBuffers(params)))            final_rc = rc;
     if ((rc = setInstantCapture(params)))               final_rc = rc;
     if ((rc = setInstantAEC(params)))                   final_rc = rc;
+    if ((rc = setInitialExposureIndex(params)))         final_rc = rc;
 
     // update live snapshot size after all other parameters are set
     if ((rc = setLiveSnapshotSize(params)))             final_rc = rc;
@@ -5038,8 +5044,9 @@ int32_t QCameraParameters::initDefaultParameters()
     // Set default preview format
     CameraParameters::setPreviewFormat(PIXEL_FORMAT_YUV420SP);
 
-    // Set default Video Format
-    set(KEY_VIDEO_FRAME_FORMAT, PIXEL_FORMAT_YUV420SP);
+    // Set default Video Format as OPAQUE
+    //Internally both Video and Camera subsystems use NV21_VENUS
+    set(KEY_VIDEO_FRAME_FORMAT, PIXEL_FORMAT_ANDROID_OPAQUE);
 
     // Set supported picture formats
     String8 pictureTypeValues(PIXEL_FORMAT_JPEG);
@@ -5902,13 +5909,6 @@ TRANS_INIT_DONE:
  *==========================================================================*/
 void QCameraParameters::deinit()
 {
-    if (NULL != m_pParamHeap) {
-        m_pParamHeap->deallocate();
-        delete m_pParamHeap;
-        m_pParamHeap = NULL;
-        m_pParamBuf = NULL;
-    }
-
     if (!m_bInited) {
         return;
     }
@@ -5929,7 +5929,12 @@ void QCameraParameters::deinit()
     }
 
     m_pCapability = NULL;
-
+    if (NULL != m_pParamHeap) {
+        m_pParamHeap->deallocate();
+        delete m_pParamHeap;
+        m_pParamHeap = NULL;
+        m_pParamBuf = NULL;
+    }
     if (NULL != m_pRelCamSyncHeap) {
         m_pRelCamSyncHeap->deallocate();
         delete m_pRelCamSyncHeap;
@@ -7623,6 +7628,59 @@ int32_t QCameraParameters::setInstantAEC(const QCameraParameters& params)
             rc = BAD_VALUE;
         }
     }
+    return rc;
+}
+
+/*===========================================================================
+ * FUNCTION   : setInitialExposureIndex
+ *
+ * DESCRIPTION: Set initial exposure index value
+ *
+ * PARAMETERS :
+ *   @params  : user setting parameters
+ *
+ * RETURN     : int32_t type of status
+ *              NO_ERROR  -- success
+ *              none-zero failure code
+ *==========================================================================*/
+int32_t QCameraParameters::setInitialExposureIndex(const QCameraParameters& params)
+{
+    int32_t rc = NO_ERROR;
+    int value = -1;
+    const char *str = params.get(KEY_QC_INITIAL_EXPOSURE_INDEX);
+    const char *prev_str = get(KEY_QC_INITIAL_EXPOSURE_INDEX);
+    if (str) {
+        if ((prev_str == NULL) || (strcmp(str, prev_str) != 0)) {
+            value = atoi(str);
+            CDBG("%s: Set initial exposure index value from param = %d", __func__, value);
+            if (value >= 0) {
+                updateParamEntry(KEY_QC_INITIAL_EXPOSURE_INDEX, str);
+            }
+        }
+    } else {
+        char prop[PROPERTY_VALUE_MAX];
+        memset(prop, 0, sizeof(prop));
+        property_get("persist.camera.initial.exp.val", prop, "");
+        if ((strlen(prop) > 0) &&
+                ( (prev_str == NULL) || (strcmp(prop, prev_str) != 0))) {
+            value = atoi(prop);
+            CDBG("%s: Set initial exposure index value from setprop = %d", __func__, value);
+            if (value >= 0) {
+                updateParamEntry(KEY_QC_INITIAL_EXPOSURE_INDEX, prop);
+            }
+        }
+    }
+
+    if (value >= 0) {
+        if (ADD_SET_PARAM_ENTRY_TO_BATCH(m_pParamBuf,
+                CAM_INTF_PARM_INITIAL_EXPOSURE_INDEX, (uint32_t)value)) {
+            ALOGE("%s:Failed to update initial exposure index value", __func__);
+            rc = BAD_VALUE;
+        }
+    } else {
+        CDBG("%s: Invalid value for initial exposure index value %d", __func__, value);
+    }
+
     return rc;
 }
 
@@ -9528,6 +9586,13 @@ int32_t QCameraParameters::getStreamFormat(cam_stream_type_t streamType,
             format = mPreviewFormat;
         break;
     case CAM_STREAM_TYPE_POSTVIEW:
+        if (m_pCapability->sensor_type.sens_type ==
+                CAM_SENSOR_Y) {
+            format = CAM_FORMAT_Y_ONLY;
+        } else {
+            format = mAppPreviewFormat;
+        }
+        break;
     case CAM_STREAM_TYPE_CALLBACK:
         format = mAppPreviewFormat;
         break;
@@ -9556,6 +9621,9 @@ int32_t QCameraParameters::getStreamFormat(cam_stream_type_t streamType,
                 format = CAM_FORMAT_YUV_420_NV21;
             }
         }
+        if (m_pCapability->sensor_type.sens_type == CAM_SENSOR_Y) {
+            format = CAM_FORMAT_Y_ONLY;
+        }
         break;
     case CAM_STREAM_TYPE_VIDEO:
         if (isUBWCEnabled()) {
@@ -9567,11 +9635,11 @@ int32_t QCameraParameters::getStreamFormat(cam_stream_type_t streamType,
             if (pFormat == 1) {
                 format = CAM_FORMAT_YUV_420_NV12_UBWC;
             } else {
-                format = CAM_FORMAT_YUV_420_NV12_VENUS;
+                format = CAM_FORMAT_YUV_420_NV21_VENUS;
             }
         } else {
 #if VENUS_PRESENT
-            format = CAM_FORMAT_YUV_420_NV12_VENUS;
+            format = CAM_FORMAT_YUV_420_NV21_VENUS;
 #else
             format = CAM_FORMAT_YUV_420_NV21;
 #endif
@@ -12158,18 +12226,23 @@ bool QCameraParameters::setStreamConfigure(bool isCapture,
                 mStreamPpMask[CAM_STREAM_TYPE_PREVIEW];
         getStreamFormat(CAM_STREAM_TYPE_PREVIEW,
                 stream_config_info.format[stream_config_info.num_streams]);
+        if (m_pCapability->sensor_type.sens_type == CAM_SENSOR_Y) {
+            // For Mono camera, update stream info format to backend as Y ONLY.
+            stream_config_info.format[stream_config_info.num_streams] = CAM_FORMAT_Y_ONLY;
+        }
         stream_config_info.num_streams++;
-
-        stream_config_info.type[stream_config_info.num_streams] =
+        if (m_pCapability->sensor_type.sens_type != CAM_SENSOR_Y) {
+            stream_config_info.type[stream_config_info.num_streams] =
                 CAM_STREAM_TYPE_ANALYSIS;
-        getStreamDimension(CAM_STREAM_TYPE_ANALYSIS,
+            getStreamDimension(CAM_STREAM_TYPE_ANALYSIS,
                 stream_config_info.stream_sizes[stream_config_info.num_streams]);
-        updatePpFeatureMask(CAM_STREAM_TYPE_ANALYSIS);
-        stream_config_info.postprocess_mask[stream_config_info.num_streams] =
+            updatePpFeatureMask(CAM_STREAM_TYPE_ANALYSIS);
+            stream_config_info.postprocess_mask[stream_config_info.num_streams] =
                 mStreamPpMask[CAM_STREAM_TYPE_ANALYSIS];
-        getStreamFormat(CAM_STREAM_TYPE_ANALYSIS,
+            getStreamFormat(CAM_STREAM_TYPE_ANALYSIS,
                 stream_config_info.format[stream_config_info.num_streams]);
-        stream_config_info.num_streams++;
+            stream_config_info.num_streams++;
+        }
 
         stream_config_info.type[stream_config_info.num_streams] =
                 CAM_STREAM_TYPE_SNAPSHOT;
@@ -12743,7 +12816,6 @@ int32_t QCameraParameters::updatePpFeatureMask(cam_stream_type_t stream_type) {
         ALOGE("%s: Error!! stream type: %d not valid", __func__, stream_type);
         return -1;
     }
-
     // Update feature mask for SeeMore in video and video preview
     if (isSeeMoreEnabled() && ((stream_type == CAM_STREAM_TYPE_VIDEO) ||
             (stream_type == CAM_STREAM_TYPE_PREVIEW && getRecordingHintValue() &&
@@ -13365,6 +13437,26 @@ int32_t QCameraParameters::setInstantAEC(uint8_t enable, bool initCommit)
     CDBG_HIGH(" setInstantAEC set value %d", enable);
     m_bInstantAEC = enable;
     return rc;
+}
+
+/*===========================================================================
+ * FUNCTION   : isFDInVideoEnabled
+ *
+ * DESCRIPTION: FD in Video change
+ *
+ * PARAMETERS : none
+ *
+ * RETURN     : TRUE  : If FD in Video enabled
+ *              FALSE : If FD in Video disabled
+ *==========================================================================*/
+bool QCameraParameters::isFDInVideoEnabled()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool fdvideo = FALSE;
+    property_get("persist.camera.fdvideo", value, "0");
+    fdvideo = (atoi(value) > 0) ? TRUE : FALSE;
+    CDBG("%s: FD in Video enabled : %d", __func__, fdvideo);
+    return fdvideo;
 }
 
 }; // namespace qcamera
