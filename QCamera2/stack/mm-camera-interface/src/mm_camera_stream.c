@@ -2012,7 +2012,7 @@ int32_t mm_stream_unmap_buf(mm_stream_t * my_obj,
     packet.payload.buf_unmap.stream_id = my_obj->server_stream_id;
     packet.payload.buf_unmap.frame_idx = frame_idx;
     packet.payload.buf_unmap.plane_idx = plane_idx;
-    int32_t ret = mm_camera_util_sendmsg(my_obj->ch_obj->cam_obj,
+    ret = mm_camera_util_sendmsg(my_obj->ch_obj->cam_obj,
             &packet,
             sizeof(cam_sock_packet_t),
             -1);
