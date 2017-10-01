@@ -9205,6 +9205,13 @@ int QCamera3HardwareInterface::initStaticMetadata(uint32_t cameraId)
     staticInfo.update(QCAMERA3_STATS_IS_HDR_SCENE_CONFIDENCE_RANGE,
             is_hdr_confidence_range, 2);
 
+    gCamCapability[cameraId]->pixel_array_size.width = gCamCapability[cameraId]->raw_dim[0].width;
+    gCamCapability[cameraId]->pixel_array_size.height = gCamCapability[cameraId]->raw_dim[0].height;
+    gCamCapability[cameraId]->active_array_size.left = 0;
+    gCamCapability[cameraId]->active_array_size.top = 0;
+    gCamCapability[cameraId]->active_array_size.width = gCamCapability[cameraId]->raw_dim[0].width;
+    gCamCapability[cameraId]->active_array_size.height = gCamCapability[cameraId]->raw_dim[0].height;
+
     gStaticMetadata[cameraId] = staticInfo.release();
     return rc;
 }

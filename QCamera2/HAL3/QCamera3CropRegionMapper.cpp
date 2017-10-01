@@ -100,7 +100,7 @@ void QCamera3CropRegionMapper::update(uint32_t active_array_w,
     if (active_array_w < sensor_w || active_array_h < sensor_h) {
         LOGE("invalid input: active_array [%d, %d], sensor size [%d, %d]",
                  active_array_w, active_array_h, sensor_w, sensor_h);
-        return;
+        //return;
     }
     mSensorW = sensor_w;
     mSensorH = sensor_h;
